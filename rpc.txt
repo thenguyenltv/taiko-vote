@@ -1,0 +1,13 @@
+
+https://rpc.taiko.tools
+
+wss://taiko.drpc.org
+wss://ws.mainnet.taiko.xyz
+
+https://rpc.ankr.com/taiko
+https://taiko.drpc.org
+https://taiko.blockpi.network/v1/rpc/public
+
+https://rpc.taiko.xyz
+
+https://rpc.mainnet.taiko.xyz
