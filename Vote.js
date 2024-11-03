@@ -1,215 +1,149 @@
 require('dotenv').config();
 const { Web3 } = require('web3');
 const {
-    CONTRACT_ADDRESS,
-    CONTRACT_ABI,
-    CHAIN_ID
+    CONTRACT_VOTE,
+    ABI_VOTE,
 } = require('./constant');
 
-// import from utils.js
-const { tnxType0 } = require('./utils');
+const { tnxType0, tnxType2, handleError} = require('./utils');
 
-const RPC_URL = "https://rpc.ankr.com/taiko/92f19728a43f08d9aa5600b526678df10e753c8b600a68c5a644623eb6c7acb6"
-// https://rpc.mainnet.taiko.xyz //--> khong the dung song song 2 file voi cung 1 rpc (wrap vs vote)
-// "https://rpc.ankr.com/taiko/92f19728a43f08d9aa5600b526678df10e753c8b600a68c5a644623eb6c7acb6"
-const _F65 = process.env._F65;
-const _B400 = process.env._B400;
-const _ANH95 = process.env._ANH95;
-const _ZERION = process.env._ZERION;
-const _F3A = process.env._F3A;
-const _971 = process.env._971;
+RPC_URL = process.env.RPC_URL;
+console.log("RPC_URL:", RPC_URL);
 
-const TKEY = process.argv[2]; // type of private key to use
-// 0 - F65, 1 - B400, 2 - ANH95, 3 - ZERION
-let address = "";
-switch (TKEY) {
-    case "0":
-        address = _F65;
-        break;
-    case "1":
-        address = _B400;
-        break;
-    case "2":
-        address = _ANH95;
-        break;
-    case "3":
-        address = _ZERION;
-        break;
-    case "4":
-        address = _F3A;
-        break;
-    case "5":
-        address = _971;
-        break
-    default:
-        address = _F65;
-        break;
-}
-const NUM_BATCH = process.argv[3];
-const NUM_TNX = process.argv[4];
-const GAS_FEE_INCREASE_PERCENT = 0; // 1%
-let TIME_WAITING = 10000;
+// const PRIVATE_KEY = process.argv[2]; // type of private key to use
+const NUM_TNX = process.argv[2];
+let GAS_FEE_INCREASE_PERCENT = process.argv[3]; 
+let TNX_PER_BATCH = process.argv[4];
+const privateKey = process.env._key;
 
 const web3 = new Web3(new Web3.providers.HttpProvider(RPC_URL));
-const contract = new web3.eth.Contract(CONTRACT_ABI, CONTRACT_ADDRESS);
-const account = web3.eth.accounts.privateKeyToAccount(address);
+const contract = new web3.eth.Contract(ABI_VOTE, CONTRACT_VOTE);
+const account = web3.eth.accounts.privateKeyToAccount(privateKey);
 
-let array_tnx = [];
+console.log("o ___________________VOTING__________________");
+console.log("o", account.address);
+console.log("o Number of Transactions:", NUM_TNX);
+console.log("o -------------------------------------------\n");
 
-console.log("Auto Voting Script");
-console.log("Address:", account.address);
-console.log("argv[2]: 0 - F65, 1 - B400, 2 - ANH95, 3 - ZERION");
-console.log("Number of Transactions:", NUM_TNX);
-
-async function loop() {
-    let totalTnxSent = 0;
-    const MAX_RETRIES = 5;
-    const RETRY_DELAY = 10000; // 5 seconds
-    const numRound = Math.floor(NUM_TNX / NUM_BATCH);
-    const numTnxLatestRound = NUM_TNX - numRound * NUM_BATCH;
-
-    let NONCE;
-    let encodedData = contract.methods.vote().encodeABI();
-    let gasPrice = await web3.eth.getGasPrice();
-    let estimatedGas;
-    let gasLimit;
-
-    for (let k = 0; k <= numRound; k++) {
-        let startNonceRound = 0;
-
-        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-            try {
-                // Fetch data from RPC in a loop to handle RPC errors
-                // console.log(`Fetching data from RPC (attempt ${attempt + 1})...`);
-                NONCE = await web3.eth.getTransactionCount(account.address);
-                estimatedGas = await web3.eth.estimateGas({
-                    to: CONTRACT_ADDRESS,
-                    data: encodedData
-                });
-                gasLimit = web3.utils.toHex(estimatedGas) * 2;
-
-                // console.log(`Data fetched successfully (attempt ${attempt + 1})`);
-                break; // Exit the retry loop if successful
-            } catch (error) {
-                console.error(`Error fetching data from RPC (attempt ${attempt + 1}):`, error.message);
-                if (attempt < MAX_RETRIES - 1) {
-                    await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-                } else {
-                    console.error('Max retries reached. Exiting...');
-                    return;
-                }
-            }
-        }
-
-        startNonceRound = NONCE;
-
-        let tnxRound;
-        if (k == numRound) {
-            tnxRound = numTnxLatestRound;
-        } else {
-            tnxRound = NUM_BATCH;
-        }
-
-        // Start sending transactions
-        console.log(`\nSending ${tnxRound} transactions with NONCE start ${startNonceRound}...`);
-        for (let i = 0; i < tnxRound; i++) {
-            try {
-                // tnxType0(NONCE, estimatedGas, gasPrice, gasLimit, encodedData);
-                const tx = {
-                    to: CONTRACT_ADDRESS,
-                    gas: estimatedGas,
-                    gasPrice: gasPrice * BigInt(100 + GAS_FEE_INCREASE_PERCENT) / BigInt(100),
-                    gasLimit: gasLimit,
-                    nonce: NONCE,
-                    value: '0x00',
-                    data: encodedData
-                };
-                tnxType0(web3, account, tx);
-                NONCE += BigInt(1);
-                await new Promise(resolve => setTimeout(resolve, TIME_WAITING / 5));
-            } catch (error) {
-                console.error('Error creating and sending transaction:', error);
-            }
-        }
-
-
-        // Time to complete the transactions
-        // maximum 72*5s = 360s
-        let nonce;
-        let isTxsSuccessful = false
-        for (let j = 0; j < 72; j++) {
-            nonce = await web3.eth.getTransactionCount(account.address);
-            if (nonce >= NONCE) {
-                isTxsSuccessful = true;
-                break;
-            }
-            await new Promise(resolve => setTimeout(resolve, TIME_WAITING / 2));
-        }
-        if (isTxsSuccessful) {
-            console.log(`nonce: ${nonce} and NONCE ${NONCE}`);  
-        }
-        console.log(`--> Done ${nonce - startNonceRound} transactions!!!\n`);
-        totalTnxSent += Number(nonce - startNonceRound);
+/**
+ * Check the value of GAS_FEE_INCREASE_PERCENT
+ * @returns {number} GAS_FEE_INCREASE_PERCENT
+ */
+function CheckGAS_FEE_INCREASE_PERCENT() {
+    number_gas = Number(GAS_FEE_INCREASE_PERCENT);
+    if (isNaN(number_gas)) {
+        console.log("Invalid GAS_FEE_INCREASE_PERCENT");
+        number_gas = 0;
+        process.exit(1);
     }
+    return number_gas;
+}
 
-    // Resend failed transactions
-    if (totalTnxSent < NUM_TNX) {
-        console.log(`\nResending ${NUM_TNX - totalTnxSent} failed transactions...`);
-    }
-    while (totalTnxSent < NUM_TNX) {
-        let startNonceRound;
-        // Resend failed transactions
-        NONCE = await web3.eth.getTransactionCount(account.address);
-        startNonceRound = NONCE;
-        estimatedGas = await web3.eth.estimateGas({
-            to: CONTRACT_ADDRESS,
+/**
+ * This function is used to send a transaction to the voting contract
+ * Just send, not waiting for the result
+ */
+async function InitializeVoting(NONCE, gasIncrease) {
+    try {
+        const encodedData = contract.methods.vote().encodeABI();
+        const estimatedGas = await web3.eth.estimateGas({
+            to: CONTRACT_VOTE,
             data: encodedData
         });
-        gasLimit = web3.utils.toHex(estimatedGas) * 2;
+        const gas_Limit = web3.utils.toHex(estimatedGas) * 2;
+        // let gasPrice = (await web3.eth.getGasPrice());
+        // gasPrice = gasPrice * BigInt(100 + gasIncrease) / BigInt(100);
+        let max_Priority_Fee_Per_Gas = await web3.eth.getGasPrice();
+        max_Priority_Fee_Per_Gas = max_Priority_Fee_Per_Gas * BigInt(100 + gasIncrease) / BigInt(100);
+        const max_Fee_Per_Gas = web3.utils.toWei('0.25', 'gwei');
 
-        // Start sending transactions
-        console.log(`\nSending 2 transactions with NONCE start ${NONCE}...`);
-        for (let i = 0; i < 2; i++) {
+        /** Type 0 transaction */
+        // const tx = {
+        //     to: CONTRACT_VOTE,
+        //     gas: estimatedGas,
+        //     gasPrice: gasPrice,
+        //     gasLimit: gasLimit,
+        //     nonce: NONCE,
+        //     value: '0x00',
+        //     data: encodedData
+        // };
+
+        /** EIP-1559 (Type 2 transaction) */
+        const tx = {
+            nonce: NONCE,
+            to: CONTRACT_VOTE,
+            data: encodedData,
+            value: '0x00',
+            maxPriorityFeePerGas: max_Priority_Fee_Per_Gas,
+            maxFeePerGas: max_Fee_Per_Gas,
+            gasLimit: gas_Limit,
+            type: '0x2', // Specify EIP-1559 transaction type
+        };
+
+
+        // console.log(`Fee gas in ETH: ${web3.utils.fromWei((max_Priority_Fee_Per_Gas * BigInt(estimatedGas)).toString(), 'ether')}`);
+        const fee = web3.utils.fromWei((max_Priority_Fee_Per_Gas * BigInt(estimatedGas)).toString(), 'ether');
+        // tnxType2(web3, account, tx);
+        return [tx, fee];
+    }
+    catch (error) {
+        console.error('Error sending vote:', error.message);
+    }
+}
+
+
+async function SendTnx() {
+    // console.log("GAS_FEE_INCREASE_PERCENT:", GAS_FEE_INCREASE_PERCENT);
+    TNX_PER_BATCH = parseInt(TNX_PER_BATCH) || 1;
+    // console.log("TNX_PER_BATCH:", TNX_PER_BATCH);
+    gasIncrease = CheckGAS_FEE_INCREASE_PERCENT();
+
+    // let NONCE = await web3.eth.getTransactionCount(account.address);
+    let NONCE = await handleError(web3.eth.getTransactionCount(account.address));
+    let startNonceRound = NONCE;
+    // console.log("Test:", startNonceRound + BigInt(TNX_PER_BATCH));
+
+    let txCount = 0, failedTxCount = 0;
+    while (txCount < NUM_TNX) {
+        TNX_PER_BATCH = Math.min(TNX_PER_BATCH, NUM_TNX - txCount);
+        console.log('\x1b[34m%s\x1b[0m', `\nSending ${TNX_PER_BATCH} transactions with NONCE start ${NONCE}...`);
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        [tx, fee] = await InitializeVoting(NONCE, gasIncrease);
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        for (let i = 0; i < TNX_PER_BATCH; i++) {
             try {
-                // tnxType0(NONCE, estimatedGas, gasPrice, gasLimit, encodedData);
-                const tx = {
-                    to: CONTRACT_ADDRESS,
-                    gas: estimatedGas,
-                    gasPrice: gasPrice * BigInt(100 + GAS_FEE_INCREASE_PERCENT) / BigInt(100),
-                    gasLimit: gasLimit,
-                    nonce: NONCE,
-                    value: '0x00',
-                    data: encodedData
-                };
-                tnxType0(web3, account, tx);
+                tnxType2(web3, account, tx);
+                console.log(`Fee: ${fee} ETH`);
                 NONCE += BigInt(1);
-                await new Promise(resolve => setTimeout(resolve, TIME_WAITING / 3));
+                tx.nonce = NONCE;
+                await new Promise(resolve => setTimeout(resolve, 1000));
             } catch (error) {
-                console.error('Error creating and sending transaction:', error);
+                console.error('Sending Tnx Error:', error.message);
             }
-        }
+        }   
 
         let nonce;
-        for (let j = 0; j < 72; j++) {
+        let TIME_WAITING = 5000;
+        for (let j = 0; j < 60; j++) {
             nonce = await web3.eth.getTransactionCount(account.address);
-            if (nonce >= NONCE) {
+            if (nonce >= startNonceRound + BigInt(TNX_PER_BATCH)) {
                 console.log(`--> Done ${nonce - startNonceRound} transactions!!!\n`);
                 break;
             }
-            await new Promise(resolve => setTimeout(resolve, TIME_WAITING / 2));
+            await new Promise(resolve => setTimeout(resolve, TIME_WAITING));
         }
-        totalTnxSent += Number(nonce - startNonceRound);
+
+        txCount += Number(nonce - startNonceRound);
+        failedTxCount = Number(NONCE - nonce);
+        NONCE = startNonceRound = nonce;
+
+        if(failedTxCount > 0) {
+            // increase gas price
+            gasIncrease += 1;
+            console.log('%s\x1b[31m%s\x1b[0m%s', `(`, `+`, `) GAS_FEE_INCREASE_PERCENT ${gasIncrease}%`);
+        }
 
     }
-
-    console.log("Total Transactions Sent:", totalTnxSent);
-
 }
 
-loop();
-
-
-
-
-
-
+SendTnx();
