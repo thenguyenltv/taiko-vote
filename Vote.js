@@ -7,19 +7,13 @@ const {
 
 const { tnxType0, tnxType2, handleError} = require('./utils');
 
-const ETH_PRICE = 2600;
+// const ETH_PRICE = 2850;
 const GAS_USAGE = 21116;
 
 RPC_URL = process.env.RPC_URL;
 const privateKey = process.env._key;
-console.log("RPC_URL:", RPC_URL);
 
-// const PRIVATE_KEY = process.argv[2]; // type of private key to use
-// const NUM_TNX = process.argv[2];
-// let GAS_FEE_INCREASE_PERCENT = process.argv[3]; 
-// let TNX_PER_BATCH = process.argv[4];
-
-const TOTAL_GAS = process.argv[2];
+const TOTAL_POINT = process.argv[2];
 
 const web3 = new Web3(new Web3.providers.HttpProvider(RPC_URL));
 const contract = new web3.eth.Contract(ABI_VOTE, CONTRACT_VOTE);
@@ -31,8 +25,8 @@ const account = web3.eth.accounts.privateKeyToAccount(privateKey);
 console.log("\no ___________________VOTING__________________");
 console.log("o", account.address);
 console.log('%s\x1b[34m%s\x1b[0m', "o Change params: ", "_key | RPC_URL");
-console.log("o Change CLI: node Vote.js [Amount of Gas in USD]");
-console.log("o Ex: node Vote.js 0.5 (Total 0.5$ in fee)")
+console.log("o Change CLI: node Vote.js [Point wana get]");
+console.log("o Ex: node Vote.js 73580 (Vote to reach 73580 points)")
 
 /**
  * This function is used to send a transaction to the voting contract
@@ -73,12 +67,12 @@ async function InitializeVoting(NONCE, gasIncrease) {
 
 /**
  * Return NUM_TNX, TNX_PER_BATCH, GAS_FEE_INCREASE_PERCENT
- * @param {number} TOTAL_GAS - Total gas amount
+ * @param {number} TOTAL_GAS - Total gas amount in ETH
  * @param {BigInt} Gas_Price - Current gas price (e.g., 125000001n)
  */
 function ProcessTotalGas(TOTAL_GAS, Gas_Price) {
     const total_gas = parseFloat(TOTAL_GAS);
-    const gas_in_eth = total_gas / ETH_PRICE;
+    // const gas_in_eth = total_gas / ETH_PRICE;
 
     const avg_gas_per_tnx = parseFloat(web3.utils.fromWei((Gas_Price * BigInt(GAS_USAGE)).toString(), 'ether'));
     
@@ -86,34 +80,50 @@ function ProcessTotalGas(TOTAL_GAS, Gas_Price) {
         return [null, null, null]
     }
 
-    let NUM_TNX = Math.floor(Math.random() * (31)) + 400;
+    let NUM_TNX = Math.floor(Math.random() * (31)) + 40;
     const TNX_PER_BATCH = Math.floor(Math.random() * (6)) + 10;
 
-    let GAS_FEE_INCREASE_PERCENT = Math.ceil((gas_in_eth / NUM_TNX - avg_gas_per_tnx) / avg_gas_per_tnx * 100);
+    let GAS_FEE_INCREASE_PERCENT = Math.ceil((total_gas / NUM_TNX - avg_gas_per_tnx) / avg_gas_per_tnx * 100);
     
     if (GAS_FEE_INCREASE_PERCENT < 0){
-        NUM_TNX = Math.ceil(gas_in_eth / avg_gas_per_tnx);
+        NUM_TNX = Math.ceil(total_gas / avg_gas_per_tnx);
+        GAS_FEE_INCREASE_PERCENT = 0;
+    }
+
+    const gas_after_increase = avg_gas_per_tnx * (1 + GAS_FEE_INCREASE_PERCENT/100);
+    if (gas_after_increase > 0.0000046) {
+        NUM_TNX = Math.ceil(total_gas / avg_gas_per_tnx);
         GAS_FEE_INCREASE_PERCENT = 0;
     }
 
     return [NUM_TNX, TNX_PER_BATCH, GAS_FEE_INCREASE_PERCENT];
 }
 
-ProcessTotalGas(TOTAL_GAS, 125000001n);
+// ProcessTotalGas(TOTAL_GAS, 125000001n);
 async function SendTnx() {
-    const Gas_Price = await handleError(web3.eth.getGasPrice());
-    let [NUM_TNX, TNX_PER_BATCH, GAS_FEE_INCREASE_PERCENT] = ProcessTotalGas(TOTAL_GAS, Gas_Price);
+    let avg_gas_price = 0n;
+    for (let index = 0; index < 30; index++) {
+        const Gas_Price = await handleError(web3.eth.getGasPrice());
+        avg_gas_price = (avg_gas_price + Gas_Price) / 2n;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+    }
 
-    console.log(`\n*** Total ${NUM_TNX} tnx with gas increase ${GAS_FEE_INCREASE_PERCENT} percent ***\n`)
+    // gwei / 10 * 2 = total_point
+    // ==> gwei = total_point / 2 * 10
+    // Do do, total_gas = gwei --> ether
+    const TOTAL_GAS_In_Wei = web3.utils.toWei((Math.ceil(parseInt(TOTAL_POINT) / 2.1 * 10)).toString(), 'Gwei');
+    const TOTAL_GAS = web3.utils.fromWei(TOTAL_GAS_In_Wei, 'ether');
+    console.log(`\nTotal Point: ${parseInt(TOTAL_POINT)}`);
+    console.log(`Total gas: ${parseFloat(TOTAL_GAS)}`);
+
+    let [NUM_TNX, TNX_PER_BATCH, GAS_FEE_INCREASE_PERCENT] = ProcessTotalGas(TOTAL_GAS, avg_gas_price);
+    
+    console.log(`==> Total ${NUM_TNX} tnx with gas increase ${GAS_FEE_INCREASE_PERCENT} percent\n`)
     
     if (NUM_TNX == null || TNX_PER_BATCH == null) {
         return;
     }
-    if (parseInt(TOTAL_GAS) > 1){
-        console.log(`Total gas (process.argv[2]) > 1$`);
-        return;
-    }
-    
+
 
     let NONCE = await handleError(web3.eth.getTransactionCount(account.address));
     if(NONCE == null || NONCE == undefined){
@@ -135,7 +145,7 @@ async function SendTnx() {
                 console.log(`Fee: ${fee} ETH`);
                 NONCE += BigInt(1);
                 tx.nonce = NONCE;
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                await new Promise(resolve => setTimeout(resolve, 500));
             } catch (error) {
                 console.error('Sending Tnx Error:', error.message);
             }
