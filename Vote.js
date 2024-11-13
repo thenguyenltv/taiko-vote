@@ -72,29 +72,17 @@ async function InitializeVoting(NONCE, gasIncrease) {
  */
 function ProcessTotalGas(TOTAL_GAS, Gas_Price) {
     const total_gas = parseFloat(TOTAL_GAS);
-    // const gas_in_eth = total_gas / ETH_PRICE;
-
     const avg_gas_per_tnx = parseFloat(web3.utils.fromWei((Gas_Price * BigInt(GAS_USAGE)).toString(), 'ether'));
     
-    if(avg_gas_per_tnx > 0.000005){
+    if(avg_gas_per_tnx > 0.0000045){
+        console.log("Gas price is so high, wait and try again!");
         return [null, null, null]
     }
 
-    let NUM_TNX = Math.floor(Math.random() * (31)) + 40;
     const TNX_PER_BATCH = Math.floor(Math.random() * (6)) + 10;
-
-    let GAS_FEE_INCREASE_PERCENT = Math.ceil((total_gas / NUM_TNX - avg_gas_per_tnx) / avg_gas_per_tnx * 100);
-    
-    if (GAS_FEE_INCREASE_PERCENT < 0){
-        NUM_TNX = Math.ceil(total_gas / avg_gas_per_tnx);
-        GAS_FEE_INCREASE_PERCENT = 0;
-    }
-
-    const gas_after_increase = avg_gas_per_tnx * (1 + GAS_FEE_INCREASE_PERCENT/100);
-    if (gas_after_increase > 0.0000046) {
-        NUM_TNX = Math.ceil(total_gas / avg_gas_per_tnx);
-        GAS_FEE_INCREASE_PERCENT = 0;
-    }
+    NUM_TNX = Math.ceil(total_gas / avg_gas_per_tnx);
+    // gas_increase = (.45 - avg_gas) / avg_gas * 100
+    GAS_FEE_INCREASE_PERCENT = (0.0000045 - Number(avg_gas_per_tnx)) / Number(avg_gas_per_tnx) * 100;
 
     return [NUM_TNX, TNX_PER_BATCH, GAS_FEE_INCREASE_PERCENT];
 }
@@ -104,6 +92,10 @@ async function SendTnx() {
     let avg_gas_price = 0n;
     for (let index = 0; index < 30; index++) {
         const Gas_Price = await handleError(web3.eth.getGasPrice());
+        if (Gas_Price === null) {
+            console.error("Failed to fetch Gas Price");
+            return;
+        }
         avg_gas_price = (avg_gas_price + Gas_Price) / 2n;
         await new Promise(resolve => setTimeout(resolve, 1000));
     }
