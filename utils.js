@@ -1,4 +1,3 @@
-// const { Web3 } = require('web3');
 
 /**
  * 
@@ -132,5 +131,17 @@ async function handleError(promise) {
     }
 }
 
-module.exports = { tnxType0, tnxType2, handleError };
+/**
+ * Rounds a BigInt in WEI to a specified number of decimal places.
+ * 
+ * @param {BigInt} num - The number in WEI to round.
+ * @param {number} [decimal=18] - The number of decimals in the blockchain, default is 18.
+ * @param {number} [to=5] - The number of decimal places to round to, default is 5.
+ * @returns {number} The rounded amount in `ETH`.
+ */
+function convertWeiToNumber(num, decimal = 18, to = 5) {
+    return Math.round(Number(num) / (10 ** (decimal - to))) / 10 ** to;
+  }
+
+module.exports = { tnxType0, tnxType2, handleError, convertWeiToNumber };
 
